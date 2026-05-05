@@ -1,0 +1,286 @@
+---
+title: "Project 1: Punta Cana Airbnb Pricing Analysis"
+author: "David J. Gibbens"
+date: "04-19-2026"
+output:
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(ggplot2)
+```
+
+# Introduction
+
+The purpose of this project is to analyze Airbnb listings in Punta Cana, Dominican Republic, and determine which listing characteristics are associated with higher nightly rental rates. Punta Cana is a major tourism destination, and understanding price drivers can help hosts optimize pricing strategies and help guests understand what influences cost.
+
+This project follows the structure required in the assignment:
+
+- A clear research question  
+- At least two pages of exploratory data analysis (EDA)  
+- At least three visualizations  
+- A multiple regression model  
+- Interpretation of results  
+- Limitations and conclusions  
+
+**Research question:**  
+**Which listing characteristics best explain variation in nightly Airbnb prices in Punta Cana?**
+
+To answer this question, I followed a clear, step‑by‑step process:
+
+1. Load and inspect the raw dataset  
+2. Clean and wrangle the data  
+3. Identify numeric variables suitable for modeling  
+4. Perform exploratory data analysis (EDA)  
+5. Select predictors of price  
+6. Fit a multiple regression model  
+7. Interpret the model and address overlapping predictors  
+8. Discuss limitations and conclusions  
+
+\newpage
+
+# Step 1: Dataset Description and Loading
+
+The dataset comes from AirRoi.com (exported April 4, 2026). It contains Airbnb listings in Punta Cana with variables describing capacity and pricing.
+
+Key variables include:
+
+- **ttm_avg_rate**: trailing twelve‑month average nightly rate  
+- **guests**: maximum guest capacity  
+- **bedrooms**: number of bedrooms  
+- **baths**: number of bathrooms  
+
+In this analysis, `ttm_avg_rate` is renamed to `price` for clarity.
+
+```{r load-data}
+airbnb <- read_csv("PuntCanaListingsData-AirRoi.com-04-04-2026.csv") |>
+  mutate(
+    guests   = as.numeric(guests),
+    bedrooms = as.numeric(bedrooms),
+    baths    = as.numeric(baths),
+    price    = ttm_avg_rate
+  )
+
+glimpse(airbnb)
+```
+
+\newpage
+
+# Step 2: Data Cleaning and Wrangling
+
+```{r data-cleaning}
+airbnb <- airbnb |>
+  filter(!is.na(price), price > 0) |>
+  filter(!is.na(guests), !is.na(bedrooms), !is.na(baths))
+
+summary(airbnb)
+```
+
+**Commentary:**  
+- Removed listings with missing or zero prices.  
+- Removed listings missing guests, bedrooms, or baths.  
+- Ensures a clean dataset suitable for regression.
+
+\newpage
+
+# Step 3: Identifying Numeric Variables
+
+```{r check-types}
+str(airbnb)
+```
+
+The numeric variables relevant to this analysis are:
+
+- **price**  
+- **guests**  
+- **bedrooms**  
+- **baths**
+
+These are the variables used for correlation analysis and regression.
+
+\newpage
+
+# Step 4: Exploratory Data Analysis (EDA)
+
+## Summary Statistics for Nightly Rate
+
+```{r price-summary}
+summary(airbnb$price)
+```
+
+**Commentary:**  
+Nightly rates are right‑skewed, with most listings in the lower‑to‑mid range and a long tail of high‑priced properties.
+
+\newpage
+
+## Distribution of Nightly Rates
+
+```{r price-hist}
+ggplot(airbnb, aes(price)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Nightly Rates",
+       x = "Nightly Rate (TTM Average)",
+       y = "Number of Listings")
+```
+
+**Commentary:**  
+This histogram shows the distribution of nightly prices. The distribution is right‑skewed, meaning most listings fall in the lower‑to‑mid price range while a smaller number of high‑priced luxury listings create a long right tail. This confirms that price varies widely across Punta Cana listings, which justifies using regression to explain that variation.
+
+\newpage
+
+## Price vs. Bedrooms
+
+```{r price-bedrooms}
+ggplot(airbnb, aes(bedrooms, price)) +
+  geom_point(alpha = 0.6, color = "darkred") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Nightly Rate vs. Bedrooms",
+       x = "Bedrooms", y = "Nightly Rate")
+```
+
+**Commentary:**  
+This scatterplot shows a positive relationship between the number of bedrooms and nightly price. Listings with more bedrooms tend to charge higher rates. The fitted regression line reinforces this upward trend, indicating that property size is an important driver of price.
+
+\newpage
+
+## Price vs. Guests
+
+```{r price-guests}
+ggplot(airbnb, aes(guests, price)) +
+  geom_point(alpha = 0.6, color = "darkgreen") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Nightly Rate vs. Guests",
+       x = "Guests", y = "Nightly Rate")
+```
+
+**Commentary:**  
+This scatterplot shows that listings accommodating more guests generally have higher nightly prices. This makes sense because higher guest capacity usually corresponds to larger or more desirable properties. The fitted line shows a clear upward trend.
+
+\newpage
+
+## Price vs. Bathrooms
+
+```{r price-baths}
+ggplot(airbnb, aes(baths, price)) +
+  geom_point(alpha = 0.6, color = "navy") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Nightly Rate vs. Bathrooms",
+       x = "Bathrooms", y = "Nightly Rate")
+```
+
+**Commentary:**  
+This scatterplot shows a positive relationship between the number of bathrooms and nightly price. Additional bathrooms increase convenience and are often associated with higher‑end or larger properties, which helps explain the upward trend in price.
+
+\newpage
+
+# Step 5: Correlation Analysis and Variable Selection
+
+```{r numeric-corr}
+airbnb_num <- airbnb |>
+  select(price, guests, bedrooms, baths)
+
+cor(airbnb_num)
+```
+
+**Commentary:**  
+- All three predictors show positive correlations with price.  
+- These variables were selected because they are numeric, interpretable, and logically related to property size.
+
+\newpage
+
+# Step 6: Multiple Regression Model (3 Predictors)
+
+```{r model1}
+model1 <- lm(price ~ guests + bedrooms + baths, data = airbnb)
+summary(model1)
+```
+
+### How much of price does the model explain?
+
+**R‑squared = 0.4699**
+
+This means the model explains **about 47% of the variation** in nightly price.  
+For a simple model using only three numeric predictors, this is a strong result.
+
+\newpage
+
+# Step 7: Regression Equation and Interpretation
+
+```{r regression-equation}
+coef(model1)
+```
+
+
+
+\[
+\text{price} = \beta_0 + \beta_1(\text{guests}) + \beta_2(\text{bedrooms}) + \beta_3(\text{baths})
+\]
+
+
+
+### Interpretation (Addressing Overlapping Predictors)
+
+- Guests, bedrooms, and baths all show **positive** relationships with price in the EDA.  
+- However, in the regression model, **bedrooms becomes negative**.  
+- This does **not** mean that adding a bedroom lowers the price.
+
+### Why did bedrooms turn negative?
+
+Guests and bedrooms both measure **property size**, and larger properties tend to increase all three variables together.  
+Because these predictors overlap, the model struggles to separate their individual effects.  
+This overlap is called **multicollinearity**.
+
+### Note on Googling VIF
+
+I looked up why coefficients flip signs and learned that the recommended diagnostic is a **VIF test**, but VIF is **outside the scope of this 300‑level course**, so I did not run it.  
+Instead, I relied on the tools covered in class:
+
+- scatterplots  
+- correlation matrix  
+- regression output  
+
+### Final interpretation
+
+The negative bedrooms coefficient is a **statistical artifact** of overlapping predictors, not a real‑world effect.  
+The overall conclusion remains clear: **larger, higher‑capacity properties tend to have higher nightly rates.**
+
+\newpage
+
+# Step 8: Model Diagnostics (Removed)
+
+R automatically produces diagnostic plots for linear regression models.  
+These diagnostics are typically covered in more advanced courses, so they were **not included or interpreted** for this project.
+
+\newpage
+
+# Key Findings
+
+1. Listings with more guests, bedrooms, and bathrooms tend to have higher nightly rates.  
+2. A simple three‑predictor model explains a meaningful portion of price variation (R² ≈ 47%).  
+3. The negative bedrooms coefficient is due to overlapping predictors, not a real effect.  
+
+# Limitations
+
+- Observational data cannot establish causality.  
+- Important factors such as amenities, location, and host ratings are not included.  
+- Results apply only to Punta Cana.  
+
+# Conclusion
+
+This project applied introductory regression techniques to real Airbnb data.  
+Following a clear step‑by‑step process, I:
+
+1. Loaded and cleaned the dataset  
+2. Identified numeric variables  
+3. Performed EDA  
+4. Selected guests, bedrooms, and baths as predictors  
+5. Fit a multiple regression model  
+6. Interpreted the model, including overlapping predictors  
+7. Summarized findings and limitations  
+
+The results show that property size and capacity are key drivers of nightly rates in Punta Cana.
